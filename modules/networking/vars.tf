@@ -31,3 +31,18 @@ variable "tag" {
 }
 data "aws_availability_zones" "availability_zone_names" {
 }
+
+
+resource "aws_kms_key" "mykey" {
+  description             = "This key is used to encrypt bucket objects"
+  deletion_window_in_days = 10
+}
+variable "ami" {
+  type = "string"
+  default = "ami-059756b9cfd567f32"
+}
+
+variable "s3_bucket_name" {
+  type = "string"
+  default = "webapp.shalvi.kubal"
+}
