@@ -108,26 +108,11 @@ resource "aws_security_group" "database" {
     to_port     = 3306
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
+    security_groups = ["${aws_security_group.application.id}"]
   }
   tags = {
     Name = "database"
   }
-}
-# RDS instance
-resource "aws_db_instance" "default" {
-  allocated_storage    = 20
-  storage_type         = "gp2"
-  engine               = "mysql"
-  engine_version       = "5.7"
-  instance_class       = "db.t3.micro"
-  name                 = "csye6225"
-  username             = "csye6225-su2020"
-  password             = "Varad@123"
-  parameter_group_name = "default.mysql5.7"
-  multi_az = false
-  identifier = "csye6225-su2020"
-  publicly_accessible = false
-
 }
 
 # S3 Bucket
@@ -148,28 +133,149 @@ resource "aws_s3_bucket" "aws_s3_bucket" {
     }
   }
   lifecycle_rule {
+    enabled = true
     transition {
       days          = 30
       storage_class = "STANDARD_IA" # or "ONEZONE_IA"
     }
   }
 }
+# RDS instance
+
+resource "aws_subnet" "rds" {
+  count                   = "${length(var.subnet_cidr)}"
+  # "${length(data.aws_availability_zones.available.names)}"
+  vpc_id                  = "${aws_vpc.main.id}"
+  cidr_block              = "10.0.${length(var.subnet_cidr) + count.index + 1}.0/24"
+  map_public_ip_on_launch = true
+  availability_zone       = "${element(data.aws_availability_zones.availability_zone_names.names, count.index)}"
+  tags = {
+    Name = "rds-${element(data.aws_availability_zones.availability_zone_names.names, count.index)}"
+  }
+}
+resource "aws_db_subnet_group" "default" {
+  name        = "${var.aws_db_instance_identifier}-subnet-group"
+  description = "Terraform example RDS subnet group"
+  subnet_ids  = "${aws_subnet.rds.*.id}"
+}
+resource "aws_db_instance" "default" {
+  allocated_storage    = 20
+  storage_type         = "gp2"
+  engine               = "mysql"
+  engine_version       = "5.7"
+  instance_class       = "db.t3.micro"
+  name                 = "${var.aws_db_instance_name}"
+  username             = "${var.aws_db_instance_username}"
+  password             = "${var.aws_db_instance_password}"
+  parameter_group_name = "default.mysql5.7"
+  multi_az = false
+  identifier =  "${var.aws_db_instance_identifier}"
+  publicly_accessible = false
+  skip_final_snapshot       = true
+  vpc_security_group_ids    = ["${aws_security_group.database.id}"]
+   db_subnet_group_name      = "${aws_db_subnet_group.default.id}"
+}
 
 # EC2 Instance
 resource "aws_instance" "web" {
   ami           = "${var.ami}"
   instance_type = "t2.micro"
+
+  count = "${length(var.subnet_cidr)}"
+  subnet_id = "${element(aws_subnet.main.*.id, count.index)}"
+  associate_public_ip_address = true
+
+
   root_block_device{
     volume_size = 20
     volume_type ="gp2"
     delete_on_termination = true
   }
+  # ebs_block_device{
+  #   device_name = "${aws_db_instance.default.name}"
+  #   delete_on_termination = true
+  # }
+  vpc_security_group_ids = ["${aws_security_group.application.id}"]
+  # security_groups = [ "${aws_security_group.application.name}" ]
+  depends_on = ["aws_db_instance.default"]
+  iam_instance_profile = "${aws_iam_instance_profile.IAM_profile.id}"
 
-  
+
 
   tags = {
-    Name = "HelloWorld"
+    Name = "ec2 instance"
+  }
+}
+
+# DynamoDB Table
+# resource "aws_dynamodb_table" "csye6225" {
+#   name             = "${var.dynamodb_table_name}"
+#   billing_mode   = "PROVISIONED"
+#   read_capacity  = 20
+#   write_capacity = 20
+#   hash_key       = "UserId"
+#   range_key      = "GameTitle"
+
+#   attribute {
+#     name = "id"
+#     type = "S"
+#   }
+#   tags = {
+#     Name        = "${var.aws_db_instance_name}"
+#     Environment = "dev"
+#   }
+# }
+
+
+#IAM role
+resource "aws_iam_role" "EC2-CSYE6225" {
+  name = "${var.IAM_role_name}"
+
+  assume_role_policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": "sts:AssumeRole",
+      "Principal": {
+        "Service": "ec2.amazonaws.com"
+      },
+      "Effect": "Allow",
+      "Sid": ""
+    }
+  ]
+}
+EOF
+
+  tags = {
+    tag-key = "tag-value"
   }
 }
 
 
+resource "aws_iam_instance_profile" "IAM_profile" {
+  name = "IAM_profile"
+  role = "${aws_iam_role.EC2-CSYE6225.name}"
+}
+resource "aws_iam_policy" "WebAppS3" {
+  name        = "WebAppS3"
+  path        = "/"
+  description = "My teWebAppS3st policy"
+
+  policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": [
+        "ec2:Describe*"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:s3:::aws_s3_bucket",
+        "arn:aws:s3:::aws_s3_bucket/*"]
+    }
+  ]
+}
+EOF
+}
