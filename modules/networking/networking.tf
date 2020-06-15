@@ -116,6 +116,10 @@ resource "aws_security_group" "database" {
 }
 
 # S3 Bucket
+resource "aws_kms_key" "mykey" {
+  description             = "This key is used to encrypt bucket objects"
+  deletion_window_in_days = 10
+}
 resource "aws_s3_bucket" "aws_s3_bucket" {
   bucket = "${var.s3_bucket_name}"
   acl    = "private"
@@ -153,11 +157,18 @@ resource "aws_subnet" "rds" {
     Name = "rds-${element(data.aws_availability_zones.availability_zone_names.names, count.index)}"
   }
 }
+# resource "aws_db_subnet_group" "default" {
+#   name        = "${var.aws_db_instance_identifier}-subnet-group"
+#   description = "Terraform example RDS subnet group"
+#   subnet_ids  = "${aws_subnet.rds.*.id}"
+# }
+
 resource "aws_db_subnet_group" "default" {
   name        = "${var.aws_db_instance_identifier}-subnet-group"
   description = "Terraform example RDS subnet group"
-  subnet_ids  = "${aws_subnet.rds.*.id}"
+  subnet_ids  = "${aws_subnet.main.*.id}"
 }
+
 resource "aws_db_instance" "default" {
   allocated_storage    = 20
   storage_type         = "gp2"
@@ -173,7 +184,7 @@ resource "aws_db_instance" "default" {
   publicly_accessible = false
   skip_final_snapshot       = true
   vpc_security_group_ids    = ["${aws_security_group.database.id}"]
-   db_subnet_group_name      = "${aws_db_subnet_group.default.id}"
+  db_subnet_group_name      = "${aws_db_subnet_group.default.id}"
 }
 
 # EC2 Instance
@@ -181,8 +192,7 @@ resource "aws_instance" "web" {
   ami           = "${var.ami}"
   instance_type = "t2.micro"
 
-  count = "${length(var.subnet_cidr)}"
-  subnet_id = "${element(aws_subnet.main.*.id, count.index)}"
+  subnet_id = "${element(aws_subnet.main.*.id, 0)}"
   associate_public_ip_address = true
 
 
@@ -191,10 +201,11 @@ resource "aws_instance" "web" {
     volume_type ="gp2"
     delete_on_termination = true
   }
-  # ebs_block_device{
-  #   device_name = "${aws_db_instance.default.name}"
-  #   delete_on_termination = true
-  # }
+
+  ebs_block_device{
+    device_name = "${aws_db_instance.default.name}"
+    delete_on_termination = true
+  }
   vpc_security_group_ids = ["${aws_security_group.application.id}"]
   # security_groups = [ "${aws_security_group.application.name}" ]
   depends_on = ["aws_db_instance.default"]
