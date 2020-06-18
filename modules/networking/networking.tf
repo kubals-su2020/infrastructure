@@ -92,6 +92,31 @@ resource "aws_security_group" "application" {
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
+  ingress {
+    description = "for angular application on build open port 4200"
+    from_port   = 3000
+    to_port     = 3000
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  egress {
+    from_port   = 3306
+    to_port     = 3306
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  egress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  egress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
   tags = {
     Name = "application"
   }
@@ -107,7 +132,6 @@ resource "aws_security_group" "database" {
     from_port   = 3306
     to_port     = 3306
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
     security_groups = ["${aws_security_group.application.id}"]
   }
   tags = {
@@ -146,17 +170,17 @@ resource "aws_s3_bucket" "aws_s3_bucket" {
 }
 # RDS instance
 
-resource "aws_subnet" "rds" {
-  count                   = "${length(var.subnet_cidr)}"
-  # "${length(data.aws_availability_zones.available.names)}"
-  vpc_id                  = "${aws_vpc.main.id}"
-  cidr_block              = "10.0.${length(var.subnet_cidr) + count.index + 1}.0/24"
-  map_public_ip_on_launch = true
-  availability_zone       = "${element(data.aws_availability_zones.availability_zone_names.names, count.index)}"
-  tags = {
-    Name = "rds-${element(data.aws_availability_zones.availability_zone_names.names, count.index)}"
-  }
-}
+# resource "aws_subnet" "rds" {
+#   count                   = "${length(var.subnet_cidr)}"
+#   # "${length(data.aws_availability_zones.available.names)}"
+#   vpc_id                  = "${aws_vpc.main.id}"
+#   cidr_block              = "10.0.${length(var.subnet_cidr) + count.index + 1}.0/24"
+#   map_public_ip_on_launch = true
+#   availability_zone       = "${element(data.aws_availability_zones.availability_zone_names.names, count.index)}"
+#   tags = {
+#     Name = "rds-${element(data.aws_availability_zones.availability_zone_names.names, count.index)}"
+#   }
+# }
 # resource "aws_db_subnet_group" "default" {
 #   name        = "${var.aws_db_instance_identifier}-subnet-group"
 #   description = "Terraform example RDS subnet group"
@@ -196,22 +220,30 @@ resource "aws_instance" "web" {
   associate_public_ip_address = true
 
 
-  root_block_device{
+  root_block_device {
     volume_size = 20
-    volume_type ="gp2"
+    volume_type = "gp2"
     delete_on_termination = true
   }
 
-  ebs_block_device{
-    device_name = "${aws_db_instance.default.name}"
-    delete_on_termination = true
-  }
+  user_data = <<-EOF
+                #! /bin/bash
+                touch /tmp/config.properties
+                echo db_username="${var.aws_db_instance_username}" >> /tmp/config.properties
+                echo db_password="${var.aws_db_instance_password}" >> /tmp/config.properties
+                echo db_hostname="${aws_db_instance.default.address}" >> /tmp/config.properties
+                echo s3_bucket_name="${aws_s3_bucket.aws_s3_bucket.id}" >> /tmp/config.properties
+                echo aws_access_key="${var.aws_access_key}" >> /tmp/config.properties
+                echo aws_secret_key="${var.aws_secret_key}" >> /tmp/config.properties
+                
+  EOF
+
   vpc_security_group_ids = ["${aws_security_group.application.id}"]
   # security_groups = [ "${aws_security_group.application.name}" ]
   depends_on = ["aws_db_instance.default"]
   iam_instance_profile = "${aws_iam_instance_profile.IAM_profile.id}"
 
-
+  key_name = "${aws_key_pair.public_key.key_name}"
 
   tags = {
     Name = "ec2 instance"
@@ -237,6 +269,22 @@ resource "aws_instance" "web" {
 #   }
 # }
 
+resource "aws_dynamodb_table" "main" {
+  name           = "${var.dynamodb_table_name}"
+  billing_mode   = "PROVISIONED"
+  read_capacity  = 20
+  write_capacity = 20
+  hash_key       = "id"
+
+  attribute {
+    name = "id"
+    type = "S"
+  }
+
+  tags = {
+    Name  = "dynamodb-table"
+  }
+}
 
 #IAM role
 resource "aws_iam_role" "EC2-CSYE6225" {
@@ -264,14 +312,10 @@ EOF
 }
 
 
-resource "aws_iam_instance_profile" "IAM_profile" {
-  name = "IAM_profile"
-  role = "${aws_iam_role.EC2-CSYE6225.name}"
-}
 resource "aws_iam_policy" "WebAppS3" {
   name        = "WebAppS3"
   path        = "/"
-  description = "My teWebAppS3st policy"
+  description = "My WebAppS3 policy"
 
   policy = <<EOF
 {
@@ -279,14 +323,30 @@ resource "aws_iam_policy" "WebAppS3" {
   "Statement": [
     {
       "Action": [
-        "ec2:Describe*"
+        "s3:*"
       ],
       "Effect": "Allow",
       "Resource": [
-        "arn:aws:s3:::aws_s3_bucket",
-        "arn:aws:s3:::aws_s3_bucket/*"]
+        "arn:aws:s3:::${aws_s3_bucket.aws_s3_bucket.id}",
+        "arn:aws:s3:::${aws_s3_bucket.aws_s3_bucket.id}/*"]
     }
   ]
 }
 EOF
+}
+
+resource "aws_iam_role_policy_attachment" "test-attach" {
+  role       = "${aws_iam_role.EC2-CSYE6225.name}"
+  policy_arn = "${aws_iam_policy.WebAppS3.arn}"
+}
+
+
+resource "aws_iam_instance_profile" "IAM_profile" {
+  name = "IAM_profile"
+  role = "${aws_iam_role.EC2-CSYE6225.name}"
+}
+
+resource "aws_key_pair" "public_key" {
+  key_name   = "public-key"
+  public_key = "${var.public_key}"
 }
