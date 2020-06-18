@@ -232,6 +232,7 @@ resource "aws_instance" "web" {
                 echo db_username="${var.aws_db_instance_username}" >> /tmp/config.properties
                 echo db_password="${var.aws_db_instance_password}" >> /tmp/config.properties
                 echo db_hostname="${aws_db_instance.default.address}" >> /tmp/config.properties
+                echo db_database="${aws_db_instance.default.name}" >> /tmp/config.properties
                 echo s3_bucket_name="${aws_s3_bucket.aws_s3_bucket.id}" >> /tmp/config.properties
                 echo aws_access_key="${var.aws_access_key}" >> /tmp/config.properties
                 echo aws_secret_key="${var.aws_secret_key}" >> /tmp/config.properties
