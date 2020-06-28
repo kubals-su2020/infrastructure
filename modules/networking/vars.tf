@@ -43,7 +43,7 @@ variable "ami" {
 
 variable "s3_bucket_name" {
   type = "string"
-  default = "webapp.shalvi.kubal"
+  default = "webapp.shalvi.kubal.bucket"
 }
 
 variable "aws_db_instance_username" {
@@ -83,4 +83,7 @@ variable "aws_access_key" {
 }
 variable "aws_secret_key" {
   type = "string"
+}
+variable "aws_account_id" {	
+  type = "string"	
 }
