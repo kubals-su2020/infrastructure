@@ -155,8 +155,7 @@ resource "aws_s3_bucket" "aws_s3_bucket" {
   server_side_encryption_configuration {
     rule {
       apply_server_side_encryption_by_default {
-        kms_master_key_id = "${aws_kms_key.mykey.arn}"
-        sse_algorithm     = "aws:kms"
+        sse_algorithm = "AES256"
       }
     }
   }
@@ -168,6 +167,16 @@ resource "aws_s3_bucket" "aws_s3_bucket" {
     }
   }
 }
+
+resource "aws_s3_bucket_public_access_block" "example" {
+  bucket = "${aws_s3_bucket.aws_s3_bucket.id}"
+
+  block_public_acls   = true
+  block_public_policy = true
+  ignore_public_acls  = true
+  restrict_public_buckets = true
+}
+
 # RDS instance
 
 # resource "aws_subnet" "rds" {
@@ -233,10 +242,7 @@ resource "aws_instance" "web" {
                 echo db_password="${var.aws_db_instance_password}" >> /tmp/config.properties
                 echo db_hostname="${aws_db_instance.default.address}" >> /tmp/config.properties
                 echo db_database="${aws_db_instance.default.name}" >> /tmp/config.properties
-                echo s3_bucket_name="${aws_s3_bucket.aws_s3_bucket.id}" >> /tmp/config.properties
-                echo aws_access_key="${var.aws_access_key}" >> /tmp/config.properties
-                echo aws_secret_key="${var.aws_secret_key}" >> /tmp/config.properties
-                
+                echo s3_bucket_name="${aws_s3_bucket.aws_s3_bucket.id}" >> /tmp/config.properties                              
   EOF
 
   vpc_security_group_ids = ["${aws_security_group.application.id}"]
