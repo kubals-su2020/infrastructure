@@ -237,12 +237,12 @@ resource "aws_instance" "web" {
 
   user_data = <<-EOF
                 #! /bin/bash
-                touch /tmp/config.properties
-                echo db_username="${var.aws_db_instance_username}" >> /tmp/config.properties
-                echo db_password="${var.aws_db_instance_password}" >> /tmp/config.properties
-                echo db_hostname="${aws_db_instance.default.address}" >> /tmp/config.properties
-                echo db_database="${aws_db_instance.default.name}" >> /tmp/config.properties
-                echo s3_bucket_name="${aws_s3_bucket.aws_s3_bucket.id}" >> /tmp/config.properties                              
+                touch /opt/config.properties
+                echo db_username="${var.aws_db_instance_username}" >> /opt/config.properties
+                echo db_password="${var.aws_db_instance_password}" >> /opt/config.properties
+                echo db_hostname="${aws_db_instance.default.address}" >> /opt/config.properties
+                echo db_database="${aws_db_instance.default.name}" >> /opt/config.properties
+                echo s3_bucket_name="${aws_s3_bucket.aws_s3_bucket.id}" >> /opt/config.properties                              
   EOF
 
   vpc_security_group_ids = ["${aws_security_group.application.id}"]
@@ -576,6 +576,11 @@ EOF
 resource "aws_iam_role_policy_attachment" "CodeDeployEC2ServiceAttach" {
   role       = "${aws_iam_role.CodeDeployEC2ServiceRole.name}"
   policy_arn = "${aws_iam_policy.CodeDeploy-EC2-S3.arn}"
+}
+
+resource "aws_iam_role_policy_attachment" "CloudWatchEC2ServiceAttach" {
+  role       = "${aws_iam_role.CodeDeployEC2ServiceRole.name}"
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
 }
 
 resource "aws_iam_role" "CodeDeployServiceRole" {
