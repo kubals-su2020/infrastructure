@@ -81,3 +81,18 @@ variable "public_key" {
 variable "aws_account_id" {	
   type = "string"	
 }
+
+variable "key_name" {
+  type = "string"
+  default = "csye6225_su2020"
+}
+
+variable "hosted_zone_id"{
+  type = "string"
+  default = "Z10038363SCMBXL1QIQ5M"
+}
+
+variable "domain_name"{
+  type = "string"
+  default = "dev.shalvikubal.me"
+}
