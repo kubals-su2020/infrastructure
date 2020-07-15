@@ -89,10 +89,10 @@ variable "key_name" {
 
 variable "hosted_zone_id"{
   type = "string"
-  default = "Z10038363SCMBXL1QIQ5M"
+  #default = "Z10038363SCMBXL1QIQ5M"
 }
 
 variable "domain_name"{
   type = "string"
-  default = "dev.shalvikubal.me"
+  #default = "dev.shalvikubal.me"
 }

@@ -124,6 +124,13 @@ resource "aws_security_group" "application" {
     protocol    = "tcp"
     security_groups = ["${aws_security_group.lb.id}"]
   }
+  egress {
+    description = "open port 3000"
+    from_port   = 3000
+    to_port     = 3000
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
   tags = {
     Name = "application"
   }
@@ -720,8 +727,8 @@ resource "aws_autoscaling_group" "asg" {
   name                 = "asg"
   launch_configuration = "${aws_launch_configuration.asg_launch_config.name}"
   min_size             = 2
-  max_size             = 4
-  desired_capacity     = 3
+  max_size             = 5
+  desired_capacity     = 2
   default_cooldown = 60
   vpc_zone_identifier = "${aws_subnet.main.*.id}"
 
@@ -759,7 +766,7 @@ resource "aws_cloudwatch_metric_alarm" "CPUAlarmHigh" {
   namespace           = "AWS/EC2"
   period              = "300"
   statistic           = "Average"
-  threshold           = "5"
+  threshold           = "40"
 
   dimensions = {
     AutoScalingGroupName = "${aws_autoscaling_group.asg.name}"
@@ -784,7 +791,7 @@ resource "aws_cloudwatch_metric_alarm" "CPUAlarmLow" {
   }
 
   alarm_description = "Scale-down if CPU < 3% for 5 minutes"
-  alarm_actions     = ["${aws_autoscaling_policy.ScaleUpPolicy.arn}"]
+  alarm_actions     = ["${aws_autoscaling_policy.ScaleDownPolicy.arn}"]
 }
 # setting up application load balancer
 resource "aws_lb" "ApplicationLoadBalancer" {
@@ -837,4 +844,102 @@ resource "aws_route53_record" "www" {
 resource "aws_autoscaling_attachment" "asg_attachment_bar" {
   autoscaling_group_name = "${aws_autoscaling_group.asg.id}"
   alb_target_group_arn   = "${aws_lb_target_group.webapp_target.arn}"
+}
+
+
+################# fake test load balancer jutsu ######################
+
+# setting up application load balancer
+resource "aws_lb" "TestLoadBalancer" {
+  name               = "TestLoadBalancer"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = ["${aws_security_group.test_lb.id}"]
+  subnets            = "${aws_subnet.main.*.id}"
+
+  enable_deletion_protection = false
+}
+# ALB listener
+resource "aws_alb_listener" "test_listener" {  
+  load_balancer_arn = "${aws_lb.TestLoadBalancer.arn}"  
+  port              = "80"  
+  protocol          = "HTTP"
+  
+  default_action {    
+    target_group_arn = "${aws_lb_target_group.test_target.arn}"
+    type             = "forward"  
+  }
+}
+# target group
+resource "aws_lb_target_group" "test_target" {
+  name     = "test-target"
+  port     = 3000
+  protocol = "HTTP"
+  vpc_id   = "${aws_vpc.main.id}"
+  
+  health_check {
+    timeout = 60
+    interval = 120
+  }
+}
+
+# aws route 53
+resource "aws_route53_record" "test" {
+  zone_id = "${var.hosted_zone_id}"
+  name    = "test.${var.domain_name}"
+  type    = "A"
+
+  alias {
+    name                   = "${aws_lb.TestLoadBalancer.dns_name}"
+    zone_id                = "${aws_lb.TestLoadBalancer.zone_id}"
+    evaluate_target_health = true
+  }
+}
+
+# Create a new ALB Target Group attachment
+resource "aws_autoscaling_attachment" "test_attachment_bar" {
+  autoscaling_group_name = "${aws_autoscaling_group.asg.id}"
+  alb_target_group_arn   = "${aws_lb_target_group.test_target.arn}"
+}
+
+resource "aws_security_group" "test_lb" {
+  name        = "test-load-balancer"
+  description = "rules for load balancer"
+  vpc_id      = "${aws_vpc.main.id}"
+
+  ingress {
+    description = "open port 3000"
+    from_port   = 3000
+    to_port     = 3000
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "open port 80"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    description = "open port 3000"
+    from_port   = 3000
+    to_port     = 3000
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    description = "open port 80"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "test-load-balancer"
+  }
 }

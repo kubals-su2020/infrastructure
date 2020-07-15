@@ -1,5 +1,7 @@
 variable "ami" {}
 variable "aws_account_id" {}
+variable "hosted_zone_id" {}
+variable "domain_name" {}
 module "infrastructure" {
     source = "../modules/networking"
     vpc_cidr = "10.0.0.0/16"
@@ -8,6 +10,10 @@ module "infrastructure" {
     tag = "a4"
     ami = "${var.ami}"
     aws_account_id = "${var.aws_account_id}"
+    hosted_zone_id = "${var.hosted_zone_id}"
+    domain_name = "${var.domain_name}"
+
+
     # create_database_subnet_group = true
     # database_subnets    = ["10.0.4.0/24", "10.0.5.0/24", "10.0.6.0/24"] 
 }
