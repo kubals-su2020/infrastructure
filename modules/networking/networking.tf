@@ -61,7 +61,7 @@ resource "aws_security_group" "application" {
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    security_groups = ["${aws_security_group.lb.id}"]
   }
 
   ingress {
@@ -69,35 +69,35 @@ resource "aws_security_group" "application" {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    security_groups = ["${aws_security_group.lb.id}"]
   }
   ingress {
     description = "for https open port 442"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    security_groups = ["${aws_security_group.lb.id}"]
   }
   ingress {
     description = "for http-server open port 8080"
     from_port   = 8080
     to_port     = 8080
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    security_groups = ["${aws_security_group.lb.id}"]
   }
   ingress {
     description = "for angular application on build open port 4200"
     from_port   = 4200
     to_port     = 4200
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    security_groups = ["${aws_security_group.lb.id}"]
   }
   ingress {
     description = "for angular application on build open port 4200"
     from_port   = 3000
     to_port     = 3000
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    security_groups = ["${aws_security_group.lb.id}"]
   }
   egress {
     from_port   = 3306
@@ -114,6 +114,20 @@ resource "aws_security_group" "application" {
   egress {
     from_port   = 22
     to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  egress {
+    description = "for http-server open port 8080"
+    from_port   = 8080
+    to_port     = 8080
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  egress {
+    description = "open port 3000"
+    from_port   = 3000
+    to_port     = 3000
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
@@ -136,6 +150,64 @@ resource "aws_security_group" "database" {
   }
   tags = {
     Name = "database"
+  }
+}
+
+resource "aws_security_group" "lb" {
+  name        = "load-balancer"
+  description = "rules for load balancer"
+  vpc_id      = "${aws_vpc.main.id}"
+
+  ingress {
+    description = "open port 8080"
+    from_port   = 8080
+    to_port     = 8080
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "open port 3000"
+    from_port   = 3000
+    to_port     = 3000
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "open port 80"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    description = "open port 8080"
+    from_port   = 8080
+    to_port     = 8080
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  
+  egress {
+    description = "open port 8080"
+    from_port   = 3000
+    to_port     = 3000
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    description = "open port 80"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "load-balancer"
   }
 }
 
@@ -207,7 +279,7 @@ resource "aws_db_instance" "default" {
   storage_type         = "gp2"
   engine               = "mysql"
   engine_version       = "5.7"
-  instance_class       = "db.t3.micro"
+  instance_class       = "db.t3.medium"
   name                 = "${var.aws_db_instance_name}"
   username             = "${var.aws_db_instance_username}"
   password             = "${var.aws_db_instance_password}"
@@ -221,42 +293,42 @@ resource "aws_db_instance" "default" {
 }
 
 # EC2 Instance
-resource "aws_instance" "web" {
-  ami           = "${var.ami}"
-  instance_type = "t2.micro"
+# resource "aws_instance" "web" {
+#   ami           = "${var.ami}"
+#   instance_type = "t2.micro"
 
-  subnet_id = "${element(aws_subnet.main.*.id, 0)}"
-  associate_public_ip_address = true
+#   subnet_id = "${element(aws_subnet.main.*.id, 0)}"
+#   associate_public_ip_address = true
 
 
-  root_block_device {
-    volume_size = 20
-    volume_type = "gp2"
-    delete_on_termination = true
-  }
+#   root_block_device {
+#     volume_size = 20
+#     volume_type = "gp2"
+#     delete_on_termination = true
+#   }
 
-  user_data = <<-EOF
-                #! /bin/bash
-                touch /opt/config.properties
-                echo db_username="${var.aws_db_instance_username}" >> /opt/config.properties
-                echo db_password="${var.aws_db_instance_password}" >> /opt/config.properties
-                echo db_hostname="${aws_db_instance.default.address}" >> /opt/config.properties
-                echo db_database="${aws_db_instance.default.name}" >> /opt/config.properties
-                echo s3_bucket_name="${aws_s3_bucket.aws_s3_bucket.id}" >> /opt/config.properties                              
-  EOF
+#   user_data = <<-EOF
+#                 #! /bin/bash
+#                 touch /opt/config.properties
+#                 echo db_username="${var.aws_db_instance_username}" >> /opt/config.properties
+#                 echo db_password="${var.aws_db_instance_password}" >> /opt/config.properties
+#                 echo db_hostname="${aws_db_instance.default.address}" >> /opt/config.properties
+#                 echo db_database="${aws_db_instance.default.name}" >> /opt/config.properties
+#                 echo s3_bucket_name="${aws_s3_bucket.aws_s3_bucket.id}" >> /opt/config.properties                              
+#   EOF
 
-  vpc_security_group_ids = ["${aws_security_group.application.id}"]
-  # security_groups = [ "${aws_security_group.application.name}" ]
-  depends_on = ["aws_db_instance.default"]
-  iam_instance_profile = "${aws_iam_instance_profile.IAM_profile.id}"
+#   vpc_security_group_ids = ["${aws_security_group.application.id}"]
+#   # security_groups = [ "${aws_security_group.application.name}" ]
+#   depends_on = ["aws_db_instance.default"]
+#   iam_instance_profile = "${aws_iam_instance_profile.IAM_profile.id}"
 
-  key_name = "${aws_key_pair.public_key.key_name}"
+#   key_name = "${aws_key_pair.public_key.key_name}"
 
-  tags = {
-    Name = "ec2 instance"
-    CodeDeploy = "true"
-  }
-}
+#   tags = {
+#     Name = "ec2 instance"
+#     CodeDeploy = "true"
+#   }
+# }
 
 # DynamoDB Table
 # resource "aws_dynamodb_table" "csye6225" {
@@ -276,7 +348,7 @@ resource "aws_instance" "web" {
 #     Environment = "dev"
 #   }
 # }
-
+# DynamoDB Table
 resource "aws_dynamodb_table" "main" {
   name           = "${var.dynamodb_table_name}"
   billing_mode   = "PROVISIONED"
@@ -295,71 +367,71 @@ resource "aws_dynamodb_table" "main" {
 }
 
 #IAM role
-resource "aws_iam_role" "EC2-CSYE6225" {
-  name = "${var.IAM_role_name}"
+# resource "aws_iam_role" "EC2-CSYE6225" {
+#   name = "${var.IAM_role_name}"
 
-  assume_role_policy = <<EOF
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Action": "sts:AssumeRole",
-      "Principal": {
-        "Service": "ec2.amazonaws.com"
-      },
-      "Effect": "Allow",
-      "Sid": ""
-    }
-  ]
-}
-EOF
+#   assume_role_policy = <<EOF
+# {
+#   "Version": "2012-10-17",
+#   "Statement": [
+#     {
+#       "Action": "sts:AssumeRole",
+#       "Principal": {
+#         "Service": "ec2.amazonaws.com"
+#       },
+#       "Effect": "Allow",
+#       "Sid": ""
+#     }
+#   ]
+# }
+# EOF
 
-  tags = {
-    tag-key = "tag-value"
-  }
-}
-
-
-resource "aws_iam_policy" "WebAppS3" {
-  name        = "WebAppS3"
-  path        = "/"
-  description = "My WebAppS3 policy"
-
-  policy = <<EOF
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Action": [
-        "s3:*"
-      ],
-      "Effect": "Allow",
-      "Resource": [
-        "arn:aws:s3:::${aws_s3_bucket.aws_s3_bucket.id}",
-        "arn:aws:s3:::${aws_s3_bucket.aws_s3_bucket.id}/*"]
-    }
-  ]
-}
-EOF
-}
-
-resource "aws_iam_role_policy_attachment" "test-attach" {
-  role       = "${aws_iam_role.EC2-CSYE6225.name}"
-  policy_arn = "${aws_iam_policy.WebAppS3.arn}"
-}
+#   tags = {
+#     tag-key = "tag-value"
+#   }
+# }
 
 
+# resource "aws_iam_policy" "WebAppS3" {
+#   name        = "WebAppS3"
+#   path        = "/"
+#   description = "My WebAppS3 policy"
+
+#   policy = <<EOF
+# {
+#   "Version": "2012-10-17",
+#   "Statement": [
+#     {
+#       "Action": [
+#         "s3:*"
+#       ],
+#       "Effect": "Allow",
+#       "Resource": [
+#         "arn:aws:s3:::${aws_s3_bucket.aws_s3_bucket.id}",
+#         "arn:aws:s3:::${aws_s3_bucket.aws_s3_bucket.id}/*"]
+#     }
+#   ]
+# }
+# EOF
+# }
+
+# resource "aws_iam_role_policy_attachment" "test-attach" {
+#   role       = "${aws_iam_role.EC2-CSYE6225.name}"
+#   policy_arn = "${aws_iam_policy.WebAppS3.arn}"
+# }
+
+# profile to attach to EC2 having role CodeDeployEC2ServiceRole
 resource "aws_iam_instance_profile" "IAM_profile" {
   name = "IAM_profile"
   role = "${aws_iam_role.CodeDeployEC2ServiceRole.name}"
 }
-
+# keypair for ec2 instance
 resource "aws_key_pair" "public_key" {
   key_name   = "public-key"
   public_key = "${var.public_key}"
 }
 
-
+# policy for ec2 to access s3
 resource "aws_iam_policy" "CodeDeploy-EC2-S3" {
   name        = "CodeDeploy-EC2-S3"
   path        = "/"
@@ -385,7 +457,7 @@ resource "aws_iam_policy" "CodeDeploy-EC2-S3" {
 EOF
 }
 
-
+# policy for circleci user to upload application to s3
 resource "aws_iam_policy" "CircleCI-Upload-To-S3" {
   name        = "CircleCI-Upload-To-S3"
   path        = "/"
@@ -410,7 +482,7 @@ resource "aws_iam_policy" "CircleCI-Upload-To-S3" {
 }
 EOF
 }
-
+# policy for circleci user to run codedeploy
 resource "aws_iam_policy" "CircleCI-Code-Deploy" {
   name        = "CircleCI-Code-Deploy"
   path        = "/"
@@ -456,7 +528,7 @@ resource "aws_iam_policy" "CircleCI-Code-Deploy" {
 EOF
 }
 
-
+# policy for circleci user to create ami
 resource "aws_iam_policy" "CircleCI-ec2-ami" {
   name        = "CircleCI-ec2-ami"
   path        = "/"
@@ -509,25 +581,25 @@ resource "aws_iam_policy" "CircleCI-ec2-ami" {
 }
 EOF
 }
-
+# attach policy to circleciuser(policy for circleci user to create ami)
 resource "aws_iam_policy_attachment" "CircleCI_ec2_ami_policy_attachment" {
   name       = "CircleCI-ec2-ami-policy-attachment"
   users      = ["cicd"]
   policy_arn = "${aws_iam_policy.CircleCI-ec2-ami.arn}"
 }
-
+# attach policy to circleciuser(policy for circleci user to upload application to s3)
 resource "aws_iam_policy_attachment" "CircleCI_Upload_To_S3_policy_attachment" {
   name       = "CircleCI-Upload-To-S3-policy-attachment"
   users      = ["cicd"]
   policy_arn = "${aws_iam_policy.CircleCI-Upload-To-S3.arn}"
 }
-
+# attach policy to circleciuser(policy for circleci user to run codedeploy)
 resource "aws_iam_policy_attachment" "CircleCI_Code_Deploy_policy_attachment" {
   name       = "CircleCI-Code-Deploy-policy-attachment"
   users      = ["cicd"]
   policy_arn = "${aws_iam_policy.CircleCI-Code-Deploy.arn}"
 }
-
+# create role for EC2 instance profile 
 resource "aws_iam_role" "CodeDeployEC2ServiceRole" {
   name = "CodeDeployEC2ServiceRole"
 
@@ -572,17 +644,17 @@ EOF
 #     tag-key = "tag-value"
 #   }
 # }
-
+# attach (policy for ec2 to access s3) to role(CodeDeployEC2ServiceRole - role attached to ec2 profile)
 resource "aws_iam_role_policy_attachment" "CodeDeployEC2ServiceAttach" {
   role       = "${aws_iam_role.CodeDeployEC2ServiceRole.name}"
   policy_arn = "${aws_iam_policy.CodeDeploy-EC2-S3.arn}"
 }
-
+# attach (attach cloud policy) to role(CodeDeployEC2ServiceRole - role attached to ec2 profile)
 resource "aws_iam_role_policy_attachment" "CloudWatchEC2ServiceAttach" {
   role       = "${aws_iam_role.CodeDeployEC2ServiceRole.name}"
   policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
 }
-
+# role for code deploy service 
 resource "aws_iam_role" "CodeDeployServiceRole" {
   name = "CodeDeployServiceRole"
 
@@ -602,21 +674,22 @@ resource "aws_iam_role" "CodeDeployServiceRole" {
 }
 EOF
 }
-
+# policy attachment to code deploy role
 resource "aws_iam_role_policy_attachment" "CodeDeployServiceRoleAttach" {
   role       = "${aws_iam_role.CodeDeployServiceRole.name}"
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSCodeDeployRole"
 }
-
+# code deploy application service created
 resource "aws_codedeploy_app" "csye6225-webapp" {
   compute_platform = "Server"
   name             = "csye6225-webapp"
 }
-
+# code deploy group forcode deploy application service created
 resource "aws_codedeploy_deployment_group" "csye6225-webapp-deployment" {
   app_name              = "${aws_codedeploy_app.csye6225-webapp.name}"
   deployment_group_name = "csye6225-webapp-deployment"
   service_role_arn      = "${aws_iam_role.CodeDeployServiceRole.arn}"
+  autoscaling_groups    = ["${aws_autoscaling_group.asg.name}"]
 
   ec2_tag_set {
     ec2_tag_filter {
@@ -638,3 +711,310 @@ resource "aws_codedeploy_deployment_group" "csye6225-webapp-deployment" {
 
   deployment_config_name = "CodeDeployDefault.AllAtOnce"
 }
+
+resource "aws_codedeploy_deployment_group" "csye6225-webapp-backend-deployment" {
+  app_name              = "${aws_codedeploy_app.csye6225-webapp.name}"
+  deployment_group_name = "csye6225-webapp-backend-deployment"
+  service_role_arn      = "${aws_iam_role.CodeDeployServiceRole.arn}"
+  autoscaling_groups    = ["${aws_autoscaling_group.asg.name}"]
+
+  ec2_tag_set {
+    ec2_tag_filter {
+      key   = "CodeDeploy"
+      type  = "KEY_AND_VALUE"
+      value = "true"
+    }
+  }
+
+  auto_rollback_configuration {
+    enabled = true
+    events  = ["DEPLOYMENT_FAILURE"]
+  }
+
+  deployment_style {
+    deployment_option = "WITHOUT_TRAFFIC_CONTROL"
+    deployment_type   = "IN_PLACE"
+  }
+
+  deployment_config_name = "CodeDeployDefault.AllAtOnce"
+}
+
+#  assignment 8
+# autoscaling launch configuration
+resource "aws_launch_configuration" "asg_launch_config" {
+  name          = "asg_launch_config"
+  image_id      = "${var.ami}"
+  instance_type = "t2.medium"
+  key_name = "${var.key_name}"
+  associate_public_ip_address = true
+  security_groups = ["${aws_security_group.application.id}"]
+  root_block_device {
+    volume_size = 20
+    volume_type = "gp2"
+    delete_on_termination = true
+  }
+  user_data = <<-EOF
+                #! /bin/bash
+                touch /opt/config.properties
+                echo db_username="${var.aws_db_instance_username}" >> /opt/config.properties
+                echo db_password="${var.aws_db_instance_password}" >> /opt/config.properties
+                echo db_hostname="${aws_db_instance.default.address}" >> /opt/config.properties
+                echo db_database="${aws_db_instance.default.name}" >> /opt/config.properties
+                echo s3_bucket_name="${aws_s3_bucket.aws_s3_bucket.id}" >> /opt/config.properties  
+                echo domain_name="${var.domain_name}" >> /opt/config.properties                            
+  EOF
+  depends_on = ["aws_db_instance.default"]
+  iam_instance_profile = "${aws_iam_instance_profile.IAM_profile.id}"
+}
+
+# autoscaling group
+resource "aws_autoscaling_group" "asg" {
+  name                 = "asg"
+  launch_configuration = "${aws_launch_configuration.asg_launch_config.name}"
+  min_size             = 2
+  max_size             = 5
+  desired_capacity     = 2
+  default_cooldown = 60
+  vpc_zone_identifier = "${aws_subnet.main.*.id}"
+
+  lifecycle {
+    create_before_destroy = true
+  }
+  tag {
+    key                 = "CodeDeploy"
+    value               = true
+    propagate_at_launch = true
+  }
+}
+# aws autoscaling policy - scale up
+resource "aws_autoscaling_policy" "ScaleUpPolicy" {
+  name                   = "ScaleUpPolicy"
+  scaling_adjustment     = 1
+  adjustment_type        = "ChangeInCapacity"
+  cooldown               = 60
+  autoscaling_group_name = "${aws_autoscaling_group.asg.name}"
+}
+# aws autoscaling policy - scale down
+resource "aws_autoscaling_policy" "ScaleDownPolicy" {
+  name                   = "ScaleDownPolicy"
+  scaling_adjustment     = -1
+  adjustment_type        = "ChangeInCapacity"
+  cooldown               = 60
+  autoscaling_group_name = "${aws_autoscaling_group.asg.name}"
+}
+# CPU utilization very high alarm - cloud watch
+resource "aws_cloudwatch_metric_alarm" "CPUAlarmHigh" {
+  alarm_name          = "CPUAlarmHigh"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "1"
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/EC2"
+  period              = "60"
+  statistic           = "Average"
+  threshold           = "90"
+
+  dimensions = {
+    AutoScalingGroupName = "${aws_autoscaling_group.asg.name}"
+  }
+
+  alarm_description = "Scale-up if CPU > 5% for 2 minutes"
+  alarm_actions     = ["${aws_autoscaling_policy.ScaleUpPolicy.arn}"]
+}
+# CPU utilization very low alarm - cloud watch
+resource "aws_cloudwatch_metric_alarm" "CPUAlarmLow" {
+  alarm_name          = "CPUAlarmLow"
+  comparison_operator = "LessThanThreshold"
+  evaluation_periods  = "1"
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/EC2"
+  period              = "60"
+  statistic           = "Average"
+  threshold           = "3"
+
+  dimensions = {
+    AutoScalingGroupName = "${aws_autoscaling_group.asg.name}"
+  }
+
+  alarm_description = "Scale-down if CPU < 3% for 2 minutes"
+  alarm_actions     = ["${aws_autoscaling_policy.ScaleDownPolicy.arn}"]
+}
+# setting up application load balancer
+resource "aws_lb" "ApplicationLoadBalancer" {
+  name               = "ApplicationLoadBalancer"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = ["${aws_security_group.lb.id}"]
+  subnets            = "${aws_subnet.main.*.id}"
+
+  enable_deletion_protection = false
+}
+# ALB listener
+resource "aws_alb_listener" "alb_listener" {  
+  load_balancer_arn = "${aws_lb.ApplicationLoadBalancer.arn}"  
+  port              = "80"  
+  protocol          = "HTTP"
+  
+  default_action {    
+    target_group_arn = "${aws_lb_target_group.webapp_target.arn}"
+    type             = "forward"  
+  }
+}
+
+resource "aws_alb_listener" "alb_listener_backend" {  
+  load_balancer_arn = "${aws_lb.ApplicationLoadBalancer.arn}"  
+  port              = "3000"  
+  protocol          = "HTTP"
+  
+  default_action {    
+    target_group_arn = "${aws_lb_target_group.webapp_target_backend.arn}"
+    type             = "forward"  
+  }
+}
+
+# target group
+resource "aws_lb_target_group" "webapp_target" {
+  name     = "webapp-target"
+  port     = 8080
+  protocol = "HTTP"
+  vpc_id   = "${aws_vpc.main.id}"
+  
+  health_check {
+    timeout = 30
+    interval = 60
+  }
+}
+
+resource "aws_lb_target_group" "webapp_target_backend" {
+  name     = "webapp-target-backend"
+  port     = 3000
+  protocol = "HTTP"
+  vpc_id   = "${aws_vpc.main.id}"
+  
+  health_check {
+    timeout = 30
+    interval = 60
+    path = "/test"
+  }
+}
+
+# aws route 53
+resource "aws_route53_record" "www" {
+  zone_id = "${var.hosted_zone_id}"
+  name    = "${var.domain_name}"
+  type    = "A"
+
+  alias {
+    name                   = "${aws_lb.ApplicationLoadBalancer.dns_name}"
+    zone_id                = "${aws_lb.ApplicationLoadBalancer.zone_id}"
+    evaluate_target_health = true
+  }
+}
+
+# Create a new ALB Target Group attachment
+resource "aws_autoscaling_attachment" "asg_attachment_bar" {
+  autoscaling_group_name = "${aws_autoscaling_group.asg.id}"
+  alb_target_group_arn   = "${aws_lb_target_group.webapp_target.arn}"
+}
+
+resource "aws_autoscaling_attachment" "asg_attachment_bar_backend" {
+  autoscaling_group_name = "${aws_autoscaling_group.asg.id}"
+  alb_target_group_arn   = "${aws_lb_target_group.webapp_target_backend.arn}"
+}
+
+
+# ################# fake test load balancer jutsu ######################
+
+# # setting up application load balancer
+# resource "aws_lb" "TestLoadBalancer" {
+#   name               = "TestLoadBalancer"
+#   internal           = false
+#   load_balancer_type = "application"
+#   security_groups    = ["${aws_security_group.test_lb.id}"]
+#   subnets            = "${aws_subnet.main.*.id}"
+
+#   enable_deletion_protection = false
+# }
+# # ALB listener
+# resource "aws_alb_listener" "test_listener" {  
+#   load_balancer_arn = "${aws_lb.TestLoadBalancer.arn}"  
+#   port              = "80"  
+#   protocol          = "HTTP"
+  
+#   default_action {    
+#     target_group_arn = "${aws_lb_target_group.test_target.arn}"
+#     type             = "forward"  
+#   }
+# }
+# # target group
+# resource "aws_lb_target_group" "test_target" {
+#   name     = "test-target"
+#   port     = 3000
+#   protocol = "HTTP"
+#   vpc_id   = "${aws_vpc.main.id}"
+  
+#   health_check {
+#     timeout = 60
+#     interval = 120
+#   }
+# }
+
+# # aws route 53
+# resource "aws_route53_record" "test" {
+#   zone_id = "${var.hosted_zone_id}"
+#   name    = "test.${var.domain_name}"
+#   type    = "A"
+
+#   alias {
+#     name                   = "${aws_lb.TestLoadBalancer.dns_name}"
+#     zone_id                = "${aws_lb.TestLoadBalancer.zone_id}"
+#     evaluate_target_health = true
+#   }
+# }
+
+# # Create a new ALB Target Group attachment
+# resource "aws_autoscaling_attachment" "test_attachment_bar" {
+#   autoscaling_group_name = "${aws_autoscaling_group.asg.id}"
+#   alb_target_group_arn   = "${aws_lb_target_group.test_target.arn}"
+# }
+
+# resource "aws_security_group" "test_lb" {
+#   name        = "test-load-balancer"
+#   description = "rules for load balancer"
+#   vpc_id      = "${aws_vpc.main.id}"
+
+#   ingress {
+#     description = "open port 3000"
+#     from_port   = 3000
+#     to_port     = 3000
+#     protocol    = "tcp"
+#     cidr_blocks = ["0.0.0.0/0"]
+#   }
+
+#   ingress {
+#     description = "open port 80"
+#     from_port   = 80
+#     to_port     = 80
+#     protocol    = "tcp"
+#     cidr_blocks = ["0.0.0.0/0"]
+#   }
+
+#   egress {
+#     description = "open port 3000"
+#     from_port   = 3000
+#     to_port     = 3000
+#     protocol    = "tcp"
+#     cidr_blocks = ["0.0.0.0/0"]
+#   }
+
+#   egress {
+#     description = "open port 80"
+#     from_port   = 80
+#     to_port     = 80
+#     protocol    = "tcp"
+#     cidr_blocks = ["0.0.0.0/0"]
+#   }
+
+#   tags = {
+#     Name = "test-load-balancer"
+#   }
+# }
