@@ -61,7 +61,7 @@ resource "aws_security_group" "application" {
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    security_groups = ["${aws_security_group.lb.id}"]
   }
 
   ingress {
@@ -69,14 +69,14 @@ resource "aws_security_group" "application" {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    security_groups = ["${aws_security_group.lb.id}"]
   }
   ingress {
     description = "for https open port 442"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    security_groups = ["${aws_security_group.lb.id}"]
   }
   ingress {
     description = "for http-server open port 8080"
@@ -90,14 +90,14 @@ resource "aws_security_group" "application" {
     from_port   = 4200
     to_port     = 4200
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    security_groups = ["${aws_security_group.lb.id}"]
   }
   ingress {
     description = "for angular application on build open port 4200"
     from_port   = 3000
     to_port     = 3000
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    security_groups = ["${aws_security_group.lb.id}"]
   }
   egress {
     from_port   = 3306
@@ -122,7 +122,7 @@ resource "aws_security_group" "application" {
     from_port   = 8080
     to_port     = 8080
     protocol    = "tcp"
-    security_groups = ["${aws_security_group.lb.id}"]
+    cidr_blocks = ["0.0.0.0/0"]
   }
   egress {
     description = "open port 3000"
@@ -146,7 +146,7 @@ resource "aws_security_group" "database" {
     from_port   = 3306
     to_port     = 3306
     protocol    = "tcp"
-    security_groups = ["${aws_security_group.lb.id}"]
+    security_groups = ["${aws_security_group.application.id}"]
   }
   tags = {
     Name = "database"
@@ -167,6 +167,14 @@ resource "aws_security_group" "lb" {
   }
 
   ingress {
+    description = "open port 3000"
+    from_port   = 3000
+    to_port     = 3000
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
     description = "open port 80"
     from_port   = 80
     to_port     = 80
@@ -178,6 +186,14 @@ resource "aws_security_group" "lb" {
     description = "open port 8080"
     from_port   = 8080
     to_port     = 8080
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  
+  egress {
+    description = "open port 8080"
+    from_port   = 3000
+    to_port     = 3000
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
@@ -263,7 +279,7 @@ resource "aws_db_instance" "default" {
   storage_type         = "gp2"
   engine               = "mysql"
   engine_version       = "5.7"
-  instance_class       = "db.t3.micro"
+  instance_class       = "db.t3.medium"
   name                 = "${var.aws_db_instance_name}"
   username             = "${var.aws_db_instance_username}"
   password             = "${var.aws_db_instance_password}"
@@ -696,12 +712,39 @@ resource "aws_codedeploy_deployment_group" "csye6225-webapp-deployment" {
   deployment_config_name = "CodeDeployDefault.AllAtOnce"
 }
 
+resource "aws_codedeploy_deployment_group" "csye6225-webapp-backend-deployment" {
+  app_name              = "${aws_codedeploy_app.csye6225-webapp.name}"
+  deployment_group_name = "csye6225-webapp-backend-deployment"
+  service_role_arn      = "${aws_iam_role.CodeDeployServiceRole.arn}"
+  autoscaling_groups    = ["${aws_autoscaling_group.asg.name}"]
+
+  ec2_tag_set {
+    ec2_tag_filter {
+      key   = "CodeDeploy"
+      type  = "KEY_AND_VALUE"
+      value = "true"
+    }
+  }
+
+  auto_rollback_configuration {
+    enabled = true
+    events  = ["DEPLOYMENT_FAILURE"]
+  }
+
+  deployment_style {
+    deployment_option = "WITHOUT_TRAFFIC_CONTROL"
+    deployment_type   = "IN_PLACE"
+  }
+
+  deployment_config_name = "CodeDeployDefault.AllAtOnce"
+}
+
 #  assignment 8
 # autoscaling launch configuration
 resource "aws_launch_configuration" "asg_launch_config" {
   name          = "asg_launch_config"
   image_id      = "${var.ami}"
-  instance_type = "t2.micro"
+  instance_type = "t2.medium"
   key_name = "${var.key_name}"
   associate_public_ip_address = true
   security_groups = ["${aws_security_group.application.id}"]
@@ -717,8 +760,10 @@ resource "aws_launch_configuration" "asg_launch_config" {
                 echo db_password="${var.aws_db_instance_password}" >> /opt/config.properties
                 echo db_hostname="${aws_db_instance.default.address}" >> /opt/config.properties
                 echo db_database="${aws_db_instance.default.name}" >> /opt/config.properties
-                echo s3_bucket_name="${aws_s3_bucket.aws_s3_bucket.id}" >> /opt/config.properties                              
+                echo s3_bucket_name="${aws_s3_bucket.aws_s3_bucket.id}" >> /opt/config.properties  
+                echo domain_name="${var.domain_name}" >> /opt/config.properties                            
   EOF
+  depends_on = ["aws_db_instance.default"]
   iam_instance_profile = "${aws_iam_instance_profile.IAM_profile.id}"
 }
 
@@ -764,15 +809,15 @@ resource "aws_cloudwatch_metric_alarm" "CPUAlarmHigh" {
   evaluation_periods  = "1"
   metric_name         = "CPUUtilization"
   namespace           = "AWS/EC2"
-  period              = "300"
+  period              = "60"
   statistic           = "Average"
-  threshold           = "40"
+  threshold           = "90"
 
   dimensions = {
     AutoScalingGroupName = "${aws_autoscaling_group.asg.name}"
   }
 
-  alarm_description = "Scale-up if CPU > 5% for 5 minutes"
+  alarm_description = "Scale-up if CPU > 5% for 2 minutes"
   alarm_actions     = ["${aws_autoscaling_policy.ScaleUpPolicy.arn}"]
 }
 # CPU utilization very low alarm - cloud watch
@@ -782,7 +827,7 @@ resource "aws_cloudwatch_metric_alarm" "CPUAlarmLow" {
   evaluation_periods  = "1"
   metric_name         = "CPUUtilization"
   namespace           = "AWS/EC2"
-  period              = "300"
+  period              = "60"
   statistic           = "Average"
   threshold           = "3"
 
@@ -790,7 +835,7 @@ resource "aws_cloudwatch_metric_alarm" "CPUAlarmLow" {
     AutoScalingGroupName = "${aws_autoscaling_group.asg.name}"
   }
 
-  alarm_description = "Scale-down if CPU < 3% for 5 minutes"
+  alarm_description = "Scale-down if CPU < 3% for 2 minutes"
   alarm_actions     = ["${aws_autoscaling_policy.ScaleDownPolicy.arn}"]
 }
 # setting up application load balancer
@@ -814,6 +859,18 @@ resource "aws_alb_listener" "alb_listener" {
     type             = "forward"  
   }
 }
+
+resource "aws_alb_listener" "alb_listener_backend" {  
+  load_balancer_arn = "${aws_lb.ApplicationLoadBalancer.arn}"  
+  port              = "3000"  
+  protocol          = "HTTP"
+  
+  default_action {    
+    target_group_arn = "${aws_lb_target_group.webapp_target_backend.arn}"
+    type             = "forward"  
+  }
+}
+
 # target group
 resource "aws_lb_target_group" "webapp_target" {
   name     = "webapp-target"
@@ -822,8 +879,21 @@ resource "aws_lb_target_group" "webapp_target" {
   vpc_id   = "${aws_vpc.main.id}"
   
   health_check {
-    timeout = 60
-    interval = 120
+    timeout = 30
+    interval = 60
+  }
+}
+
+resource "aws_lb_target_group" "webapp_target_backend" {
+  name     = "webapp-target-backend"
+  port     = 3000
+  protocol = "HTTP"
+  vpc_id   = "${aws_vpc.main.id}"
+  
+  health_check {
+    timeout = 30
+    interval = 60
+    path = "/test"
   }
 }
 
@@ -846,100 +916,105 @@ resource "aws_autoscaling_attachment" "asg_attachment_bar" {
   alb_target_group_arn   = "${aws_lb_target_group.webapp_target.arn}"
 }
 
-
-################# fake test load balancer jutsu ######################
-
-# setting up application load balancer
-resource "aws_lb" "TestLoadBalancer" {
-  name               = "TestLoadBalancer"
-  internal           = false
-  load_balancer_type = "application"
-  security_groups    = ["${aws_security_group.test_lb.id}"]
-  subnets            = "${aws_subnet.main.*.id}"
-
-  enable_deletion_protection = false
-}
-# ALB listener
-resource "aws_alb_listener" "test_listener" {  
-  load_balancer_arn = "${aws_lb.TestLoadBalancer.arn}"  
-  port              = "80"  
-  protocol          = "HTTP"
-  
-  default_action {    
-    target_group_arn = "${aws_lb_target_group.test_target.arn}"
-    type             = "forward"  
-  }
-}
-# target group
-resource "aws_lb_target_group" "test_target" {
-  name     = "test-target"
-  port     = 3000
-  protocol = "HTTP"
-  vpc_id   = "${aws_vpc.main.id}"
-  
-  health_check {
-    timeout = 60
-    interval = 120
-  }
-}
-
-# aws route 53
-resource "aws_route53_record" "test" {
-  zone_id = "${var.hosted_zone_id}"
-  name    = "test.${var.domain_name}"
-  type    = "A"
-
-  alias {
-    name                   = "${aws_lb.TestLoadBalancer.dns_name}"
-    zone_id                = "${aws_lb.TestLoadBalancer.zone_id}"
-    evaluate_target_health = true
-  }
-}
-
-# Create a new ALB Target Group attachment
-resource "aws_autoscaling_attachment" "test_attachment_bar" {
+resource "aws_autoscaling_attachment" "asg_attachment_bar_backend" {
   autoscaling_group_name = "${aws_autoscaling_group.asg.id}"
-  alb_target_group_arn   = "${aws_lb_target_group.test_target.arn}"
+  alb_target_group_arn   = "${aws_lb_target_group.webapp_target_backend.arn}"
 }
 
-resource "aws_security_group" "test_lb" {
-  name        = "test-load-balancer"
-  description = "rules for load balancer"
-  vpc_id      = "${aws_vpc.main.id}"
 
-  ingress {
-    description = "open port 3000"
-    from_port   = 3000
-    to_port     = 3000
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+# ################# fake test load balancer jutsu ######################
 
-  ingress {
-    description = "open port 80"
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+# # setting up application load balancer
+# resource "aws_lb" "TestLoadBalancer" {
+#   name               = "TestLoadBalancer"
+#   internal           = false
+#   load_balancer_type = "application"
+#   security_groups    = ["${aws_security_group.test_lb.id}"]
+#   subnets            = "${aws_subnet.main.*.id}"
 
-  egress {
-    description = "open port 3000"
-    from_port   = 3000
-    to_port     = 3000
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+#   enable_deletion_protection = false
+# }
+# # ALB listener
+# resource "aws_alb_listener" "test_listener" {  
+#   load_balancer_arn = "${aws_lb.TestLoadBalancer.arn}"  
+#   port              = "80"  
+#   protocol          = "HTTP"
+  
+#   default_action {    
+#     target_group_arn = "${aws_lb_target_group.test_target.arn}"
+#     type             = "forward"  
+#   }
+# }
+# # target group
+# resource "aws_lb_target_group" "test_target" {
+#   name     = "test-target"
+#   port     = 3000
+#   protocol = "HTTP"
+#   vpc_id   = "${aws_vpc.main.id}"
+  
+#   health_check {
+#     timeout = 60
+#     interval = 120
+#   }
+# }
 
-  egress {
-    description = "open port 80"
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+# # aws route 53
+# resource "aws_route53_record" "test" {
+#   zone_id = "${var.hosted_zone_id}"
+#   name    = "test.${var.domain_name}"
+#   type    = "A"
 
-  tags = {
-    Name = "test-load-balancer"
-  }
-}
+#   alias {
+#     name                   = "${aws_lb.TestLoadBalancer.dns_name}"
+#     zone_id                = "${aws_lb.TestLoadBalancer.zone_id}"
+#     evaluate_target_health = true
+#   }
+# }
+
+# # Create a new ALB Target Group attachment
+# resource "aws_autoscaling_attachment" "test_attachment_bar" {
+#   autoscaling_group_name = "${aws_autoscaling_group.asg.id}"
+#   alb_target_group_arn   = "${aws_lb_target_group.test_target.arn}"
+# }
+
+# resource "aws_security_group" "test_lb" {
+#   name        = "test-load-balancer"
+#   description = "rules for load balancer"
+#   vpc_id      = "${aws_vpc.main.id}"
+
+#   ingress {
+#     description = "open port 3000"
+#     from_port   = 3000
+#     to_port     = 3000
+#     protocol    = "tcp"
+#     cidr_blocks = ["0.0.0.0/0"]
+#   }
+
+#   ingress {
+#     description = "open port 80"
+#     from_port   = 80
+#     to_port     = 80
+#     protocol    = "tcp"
+#     cidr_blocks = ["0.0.0.0/0"]
+#   }
+
+#   egress {
+#     description = "open port 3000"
+#     from_port   = 3000
+#     to_port     = 3000
+#     protocol    = "tcp"
+#     cidr_blocks = ["0.0.0.0/0"]
+#   }
+
+#   egress {
+#     description = "open port 80"
+#     from_port   = 80
+#     to_port     = 80
+#     protocol    = "tcp"
+#     cidr_blocks = ["0.0.0.0/0"]
+#   }
+
+#   tags = {
+#     Name = "test-load-balancer"
+#   }
+# }
