@@ -654,6 +654,11 @@ resource "aws_iam_role_policy_attachment" "CloudWatchEC2ServiceAttach" {
   role       = "${aws_iam_role.CodeDeployEC2ServiceRole.name}"
   policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
 }
+# attach (sns ploicy) to role(CodeDeployEC2ServiceRole - role attached to ec2 profile)
+resource "aws_iam_role_policy_attachment" "SNSEC2ServiceAttach" {
+  role       = "${aws_iam_role.CodeDeployEC2ServiceRole.name}"
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSNSFullAccess"
+}
 # role for code deploy service 
 resource "aws_iam_role" "CodeDeployServiceRole" {
   name = "CodeDeployServiceRole"
@@ -761,7 +766,8 @@ resource "aws_launch_configuration" "asg_launch_config" {
                 echo db_hostname="${aws_db_instance.default.address}" >> /opt/config.properties
                 echo db_database="${aws_db_instance.default.name}" >> /opt/config.properties
                 echo s3_bucket_name="${aws_s3_bucket.aws_s3_bucket.id}" >> /opt/config.properties  
-                echo domain_name="${var.domain_name}" >> /opt/config.properties                            
+                echo domain_name="${var.domain_name}" >> /opt/config.properties         
+                echo target_arn = "${aws_sns_topic.password_reset.arn}" >> /opt/config.properties               
   EOF
   depends_on = ["aws_db_instance.default"]
   iam_instance_profile = "${aws_iam_instance_profile.IAM_profile.id}"
@@ -771,9 +777,9 @@ resource "aws_launch_configuration" "asg_launch_config" {
 resource "aws_autoscaling_group" "asg" {
   name                 = "asg"
   launch_configuration = "${aws_launch_configuration.asg_launch_config.name}"
-  min_size             = 2
-  max_size             = 5
-  desired_capacity     = 2
+  min_size             = 1
+  max_size             = 1
+  desired_capacity     = 1
   default_cooldown = 60
   vpc_zone_identifier = "${aws_subnet.main.*.id}"
 
@@ -921,6 +927,140 @@ resource "aws_autoscaling_attachment" "asg_attachment_bar_backend" {
   alb_target_group_arn   = "${aws_lb_target_group.webapp_target_backend.arn}"
 }
 
+
+#assignment 9
+# create sns topic
+resource "aws_sns_topic" "password_reset" {
+  name = "password_reset"
+}
+#attach policy to sns topic
+resource "aws_sns_topic_policy" "default" {
+  arn = "${aws_sns_topic.password_reset.arn}"
+  policy = "${data.aws_iam_policy_document.sns_topic_policy.json}"
+}
+# policy of sns for of who can access(account id) and operations it can perform
+data "aws_iam_policy_document" "sns_topic_policy" {
+  policy_id = "__default_policy_ID"
+
+  statement {
+    actions = [
+      "SNS:Subscribe",
+      "SNS:SetTopicAttributes",
+      "SNS:RemovePermission",
+      "SNS:Receive",
+      "SNS:Publish",
+      "SNS:ListSubscriptionsByTopic",
+      "SNS:GetTopicAttributes",
+      "SNS:DeleteTopic",
+      "SNS:AddPermission",
+    ]
+
+    condition {
+      test     = "StringEquals"
+      variable = "AWS:SourceOwner"
+
+      values = [
+        "${var.aws_account_id}",
+      ]
+    }
+
+    effect = "Allow"
+
+    principals {
+      type        = "AWS"
+      identifiers = ["*"]
+    }
+
+    resources = [
+      "${aws_sns_topic.password_reset.arn}",
+    ]
+
+    sid = "__default_statement_ID"
+  }
+}
+#create lambda function resource 
+resource "aws_lambda_function" "func" {
+  filename      = "index.js.zip"
+  function_name = "lambda_called_from_sns"
+  role          = "${aws_iam_role.default.arn}"
+  handler       = "exports.handler"
+  runtime       = "nodejs10.x"
+  depends_on = ["aws_iam_role_policy_attachment.lambda_logs", "aws_cloudwatch_log_group.example"]
+}
+# log group for lambda
+# This is to optionally manage the CloudWatch Log Group for the Lambda Function.
+# If skipping this resource configuration, also add "logs:CreateLogGroup" to the IAM policy below.
+resource "aws_cloudwatch_log_group" "example" {
+  name              = "/aws/lambda/reset_password"
+  retention_in_days = 14
+}
+
+resource "aws_iam_policy" "lambda_logging" {
+  name        = "lambda_logging"
+  path        = "/"
+  description = "IAM policy for logging from a lambda"
+
+  policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
+      "Resource": "arn:aws:logs:*:*:*",
+      "Effect": "Allow"
+    }
+  ]
+}
+EOF
+}
+# attach logging policy to lambda
+resource "aws_iam_role_policy_attachment" "lambda_logs" {
+  role       = "${aws_iam_role.default.name}"
+  policy_arn = "${aws_iam_policy.lambda_logging.arn}"
+}
+# iam role for lambda
+resource "aws_iam_role" "default" {
+  name = "iam_for_lambda_with_sns"
+
+  assume_role_policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": "sts:AssumeRole",
+      "Principal": {
+        "Service": "lambda.amazonaws.com"
+      },
+      "Effect": "Allow",
+      "Sid": ""
+    }
+  ]
+}
+EOF
+}
+# allow lambda execution from sns
+resource "aws_lambda_permission" "with_sns" {
+  statement_id  = "AllowExecutionFromSNS"
+  action        = "lambda:InvokeFunction"
+  function_name = "${aws_lambda_function.func.function_name}"
+  principal     = "sns.amazonaws.com"
+  source_arn    = "${aws_sns_topic.password_reset.arn}"
+}
+# subscribe lambda to sns
+resource "aws_sns_topic_subscription" "lambda" {
+  topic_arn = "${aws_sns_topic.password_reset.arn}"
+  protocol  = "lambda"
+  endpoint  = "${aws_lambda_function.func.arn}"
+}
+
+# resource "aws_iam_role_policy_attachment" "ec2_SNS" {
+# 	role = "${aws_iam_role.CodeDeployEC2ServiceAttach.name}"
+# 	policy_arn = "arn:aws:iam::aws:policy/AmazonSNSFullAccess"
+# }
 
 # ################# fake test load balancer jutsu ######################
 
