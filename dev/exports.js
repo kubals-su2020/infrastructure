@@ -1,82 +1,87 @@
-// Load the AWS SDK for Node.js
-var AWS = require('aws-sdk');
+var aws = require('aws-sdk');
+// var ses = new aws.SES({region: 'us-west-2'});
+var domainName = process.env.DOMAIN;
+var sourceEmailId = process.env.SOURCE;
+var ddb = new aws.DynamoDB({params: {TableName: 'csye6225'}});
 
-AWS.config.update({region: 'REGION'});
+exports.handler = function(event, context) {
 
-// Create the DynamoDB service object
-var ddb = new AWS.DynamoDB({apiVersion: '2012-08-10'});
-
-
-// function getItem(readParams){
-    
-//   db.get(readParams, (err, data) => {
-//   if (err){
-//     console.log("Error:", err);
-//   } 
-//   else{
-//     console.log("Success:", data.Item);
-    
-//   } 
-//   console.log("Completed call");
-// });
-
-// }
-
-
-// const db = new AWS.DynamoDB.DocumentClient({
-//   region : 'us-east-1' 
-// })
-
-exports.handler =  async function(event, context) {
     console.log("EVENT: \n" + JSON.stringify(event, null, 2))
     const snsMsg = event.Records[0].Sns.Message;
     var userEmail = snsMsg.split(':')[0];
     var resetToken = snsMsg.split(':')[1];
     var ttl = snsMsg.split(':')[2];
-    
+    var temttl= Math.floor(Date.now() / 1000) + 900;
+    console.log(temttl)
     var readParams = {
       TableName: 'csye6225',
       Key: {
-        'emailId': {S: userEmail}
+        'id': {S: userEmail}
       }
     };
+
     var writeParams = {
       TableName: 'csye6225',
       Item: {
-        'emailId' : {S: userEmail},
+        'id' : {S: userEmail},
         'token' : {S: resetToken},
-        'ttl':{N: ttl}
+        'ttl':{N: temttl.toString()}
       }
     };
-    console.log("why")
-    // getItem(readParams);
-
     
-
     
-    // Call DynamoDB to read the item from the table
+    
+    //get item from dynamodb
     ddb.getItem(readParams, function(err, data) {
-      console.log("exeeeee")
       if (err) {
-        
-        console.log("read err")
-        console.log("Error", err);
-        // Call DynamoDB to add the item to the table
-        // ddb.putItem(writeParams, function(err, data) {
-        //   if (err) {
-        //     console.log("Error", err);
-        //   } else {
-        //     console.log("Success", data);
-        //   }
-        // });
-        
-      } else {
-        console.log("read succ")
-        console.log("Success", data.Item);
+        console.log("Error getting item", err);
+      }
+      else {
+        console.log(data)
+          if(Object.keys(data).length>0){
+            console.log("Success getting item:", data.Item);
+          }
+          else{
+            console.log("Success getting, but no item ");
+            // put item to DynamoDB 
+            ddb.putItem(writeParams, function(err, data) {
+              if (err) {
+                console.log("Error putting item", err);
+              } else {
+                 const params = {
+                  Destination: {
+                    ToAddresses: [userEmail]
+                  },
+                  Message: {
+                    Body: {
+                      Text: {
+                        Charset: "UTF-8",
+                        Data: 'http://'+domainName+'/reset?email='+userEmail+'&token='+resetToken
+                      }
+                    },
+                    Subject: {
+                      Charset: "UTF-8",
+                      Data: "Password Reset Link"
+                    }
+                  },
+                  Source: sourceEmailId
+                };
+                // Create the promise and SES service object
+                var sendPromise = new aws.SES({apiVersion: '2010-12-01'}).sendEmail(params).promise();
+
+                // Handle promise's fulfilled/rejected states
+                sendPromise.then(
+                  function(data) {
+                    console.log(data.MessageId);
+                  }).catch(
+                    function(err) {
+                    console.error(err, err.stack);
+                  });
+                console.log("Success putting item:", data);
+              }
+            });
+          }
       }
     });
-    
-    // console.log(sns)
- 
-    // return context.logStreamName
-  }
+
+};

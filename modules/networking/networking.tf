@@ -360,7 +360,10 @@ resource "aws_dynamodb_table" "main" {
     name = "id"
     type = "S"
   }
-
+  ttl {
+    attribute_name = "ttl"
+    enabled        = true
+  }
   tags = {
     Name  = "dynamodb-table"
   }
@@ -587,6 +590,36 @@ resource "aws_iam_policy_attachment" "CircleCI_ec2_ami_policy_attachment" {
   users      = ["cicd"]
   policy_arn = "${aws_iam_policy.CircleCI-ec2-ami.arn}"
 }
+
+# policy for circleci user to execute lambda function
+resource "aws_iam_policy" "CircleCI-Lambda-Execution" {
+  name        = "CircleCI-Lambda-Execution"
+  path        = "/"
+  description = "CircleCI Lambda Execution"
+
+  policy = <<EOF
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "lambda:*"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+EOF
+}
+
+# attach policy to circleciuser(policy for circleci user to create ami)
+resource "aws_iam_policy_attachment" "CircleCI_lambda_policy_attachment" {
+  name       = "CircleCI-lambda-policy-attachment"
+  users      = ["cicd"]
+  policy_arn = "${aws_iam_policy.CircleCI-Lambda-Execution.arn}"
+}
+
 # attach policy to circleciuser(policy for circleci user to upload application to s3)
 resource "aws_iam_policy_attachment" "CircleCI_Upload_To_S3_policy_attachment" {
   name       = "CircleCI-Upload-To-S3-policy-attachment"
@@ -767,7 +800,8 @@ resource "aws_launch_configuration" "asg_launch_config" {
                 echo db_database="${aws_db_instance.default.name}" >> /opt/config.properties
                 echo s3_bucket_name="${aws_s3_bucket.aws_s3_bucket.id}" >> /opt/config.properties  
                 echo domain_name="${var.domain_name}" >> /opt/config.properties         
-                echo target_arn = "${aws_sns_topic.password_reset.arn}" >> /opt/config.properties               
+                echo target_arn="${aws_sns_topic.password_reset.arn}" >> /opt/config.properties
+                echo region="${var.region}" >> /opt/config.properties                
   EOF
   depends_on = ["aws_db_instance.default"]
   iam_instance_profile = "${aws_iam_instance_profile.IAM_profile.id}"
@@ -777,9 +811,9 @@ resource "aws_launch_configuration" "asg_launch_config" {
 resource "aws_autoscaling_group" "asg" {
   name                 = "asg"
   launch_configuration = "${aws_launch_configuration.asg_launch_config.name}"
-  min_size             = 1
-  max_size             = 1
-  desired_capacity     = 1
+  min_size             = 2
+  max_size             = 5
+  desired_capacity     = 2
   default_cooldown = 60
   vpc_zone_identifier = "${aws_subnet.main.*.id}"
 
@@ -986,6 +1020,12 @@ resource "aws_lambda_function" "func" {
   handler       = "exports.handler"
   runtime       = "nodejs10.x"
   depends_on = ["aws_iam_role_policy_attachment.lambda_logs"]
+  environment {
+    variables = {
+      DOMAIN = "${var.domain_name}"
+      SOURCE = "shalvi@${var.domain_name}"
+    }
+  }
 }
 # log group for lambda
 # This is to optionally manage the CloudWatch Log Group for the Lambda Function., "aws_cloudwatch_log_group.example"
@@ -1021,6 +1061,16 @@ EOF
 resource "aws_iam_role_policy_attachment" "lambda_logs" {
   role       = "${aws_iam_role.default.name}"
   policy_arn = "${aws_iam_policy.lambda_logging.arn}"
+}
+# attach dynamodb full access policy to lambda
+resource "aws_iam_role_policy_attachment" "lambda_dynamodb" {
+  role       = "${aws_iam_role.default.name}"
+  policy_arn = "arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess"
+}
+# attach ses full access policy to lambda
+resource "aws_iam_role_policy_attachment" "lambda_ses" {
+  role       = "${aws_iam_role.default.name}"
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSESFullAccess"
 }
 # iam role for lambda
 resource "aws_iam_role" "default" {
