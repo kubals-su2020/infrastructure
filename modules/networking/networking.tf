@@ -1016,7 +1016,7 @@ data "aws_iam_policy_document" "sns_topic_policy" {
 resource "aws_lambda_function" "func" {
   filename      = "exports.js.zip"
   function_name = "lambda_called_from_sns"
-  role          = "${aws_iam_role.default.arn}"
+  role          = "${aws_iam_role.lambda_role.arn}"
   handler       = "exports.handler"
   runtime       = "nodejs10.x"
   depends_on = ["aws_iam_role_policy_attachment.lambda_logs"]
@@ -1059,21 +1059,79 @@ EOF
 }
 # attach logging policy to lambda
 resource "aws_iam_role_policy_attachment" "lambda_logs" {
-  role       = "${aws_iam_role.default.name}"
+  role       = "${aws_iam_role.lambda_role.name}"
   policy_arn = "${aws_iam_policy.lambda_logging.arn}"
 }
 # attach dynamodb full access policy to lambda
-resource "aws_iam_role_policy_attachment" "lambda_dynamodb" {
-  role       = "${aws_iam_role.default.name}"
-  policy_arn = "arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess"
+# resource "aws_iam_role_policy_attachment" "lambda_dynamodb" {
+#   role       = "${aws_iam_role.default.name}"
+#   policy_arn = "arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess"
+# }
+
+
+
+
+# policy for specific dynamodb access ${var.dynamodb_table_name}
+resource "aws_iam_policy" "dynamodb_access_policy" {
+  name        = "test-policy"
+  description = "A test policy"
+
+  policy = <<EOF
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "ReadWriteTable",
+            "Effect": "Allow",
+            "Action": [
+                "dynamodb:BatchGetItem",
+                "dynamodb:GetItem",
+                "dynamodb:Query",
+                "dynamodb:Scan",
+                "dynamodb:BatchWriteItem",
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem"
+            ],
+            "Resource": "arn:aws:dynamodb:*:*:table/${var.dynamodb_table_name}"
+        },
+        {
+            "Sid": "GetStreamRecords",
+            "Effect": "Allow",
+            "Action": "dynamodb:GetRecords",
+            "Resource": "arn:aws:dynamodb:*:*:table/${var.dynamodb_table_name}/stream/* "
+        },
+        {
+            "Sid": "WriteLogStreamsAndGroups",
+            "Effect": "Allow",
+            "Action": [
+                "logs:CreateLogStream",
+                "logs:PutLogEvents"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "CreateLogGroup",
+            "Effect": "Allow",
+            "Action": "logs:CreateLogGroup",
+            "Resource": "*"
+        }
+    ]
 }
+EOF
+}
+# attach dynamodb specific table access policy to lambda
+resource "aws_iam_role_policy_attachment" "lambda_dynamodb" {
+  role       = "${aws_iam_role.lambda_role.name}"
+  policy_arn = "${aws_iam_policy.dynamodb_access_policy.arn}"
+}
+
 # attach ses full access policy to lambda
 resource "aws_iam_role_policy_attachment" "lambda_ses" {
-  role       = "${aws_iam_role.default.name}"
+  role       = "${aws_iam_role.lambda_role.name}"
   policy_arn = "arn:aws:iam::aws:policy/AmazonSESFullAccess"
 }
 # iam role for lambda
-resource "aws_iam_role" "default" {
+resource "aws_iam_role" "lambda_role" {
   name = "iam_for_lambda_with_sns"
 
   assume_role_policy = <<EOF
