@@ -64,13 +64,13 @@ resource "aws_security_group" "application" {
     security_groups = ["${aws_security_group.lb.id}"]
   }
 
-  ingress {
-    description = "for http open port 22"
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    security_groups = ["${aws_security_group.lb.id}"]
-  }
+  # ingress {
+  #   description = "for ssh open port 22"
+  #   from_port   = 22
+  #   to_port     = 22
+  #   protocol    = "tcp"
+  #   security_groups = ["${aws_security_group.lb.id}"]
+  # }
   ingress {
     description = "for https open port 442"
     from_port   = 443
