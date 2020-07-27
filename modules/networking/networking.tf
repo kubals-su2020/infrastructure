@@ -181,7 +181,13 @@ resource "aws_security_group" "lb" {
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
-
+  ingress {
+    description = "open port 443"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
   egress {
     description = "open port 8080"
     from_port   = 8080
@@ -280,6 +286,7 @@ resource "aws_db_instance" "default" {
   engine               = "mysql"
   engine_version       = "5.7"
   instance_class       = "db.t3.medium"
+  storage_encrypted    = true
   name                 = "${var.aws_db_instance_name}"
   username             = "${var.aws_db_instance_username}"
   password             = "${var.aws_db_instance_password}"
@@ -891,7 +898,8 @@ resource "aws_lb" "ApplicationLoadBalancer" {
 # ALB listener
 resource "aws_alb_listener" "alb_listener" {  
   load_balancer_arn = "${aws_lb.ApplicationLoadBalancer.arn}"  
-  port              = "80"  
+  # port              = "80"  
+  port              = "443"  
   protocol          = "HTTPS"
   certificate_arn = "${var.aws_acm_certificate_arn}"
   default_action {    
