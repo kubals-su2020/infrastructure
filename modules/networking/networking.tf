@@ -892,8 +892,8 @@ resource "aws_lb" "ApplicationLoadBalancer" {
 resource "aws_alb_listener" "alb_listener" {  
   load_balancer_arn = "${aws_lb.ApplicationLoadBalancer.arn}"  
   port              = "80"  
-  protocol          = "HTTP"
-  
+  protocol          = "HTTPS"
+  certificate_arn = "${var.aws_acm_certificate_arn}"
   default_action {    
     target_group_arn = "${aws_lb_target_group.webapp_target.arn}"
     type             = "forward"  
@@ -903,8 +903,8 @@ resource "aws_alb_listener" "alb_listener" {
 resource "aws_alb_listener" "alb_listener_backend" {  
   load_balancer_arn = "${aws_lb.ApplicationLoadBalancer.arn}"  
   port              = "3000"  
-  protocol          = "HTTP"
-  
+  protocol          = "HTTPS"
+  certificate_arn = "${var.aws_acm_certificate_arn}"
   default_action {    
     target_group_arn = "${aws_lb_target_group.webapp_target_backend.arn}"
     type             = "forward"  
@@ -1164,7 +1164,16 @@ resource "aws_sns_topic_subscription" "lambda" {
   protocol  = "lambda"
   endpoint  = "${aws_lambda_function.func.arn}"
 }
+# assignment 10
 
+# resource "aws_lb_listener_certificate" "certificate_frontend" {
+#   listener_arn    = "${aws_lb_listener.alb_listener.arn}"
+#   certificate_arn = "${var.aws_acm_certificate_arn}"
+# }
+# resource "aws_lb_listener_certificate" "certificate_backend" {
+#   listener_arn    = "${aws_lb_listener.alb_listener_backend.arn}"
+#   certificate_arn = "${var.aws_acm_certificate_arn}"
+# }
 # resource "aws_iam_role_policy_attachment" "ec2_SNS" {
 # 	role = "${aws_iam_role.CodeDeployEC2ServiceAttach.name}"
 # 	policy_arn = "arn:aws:iam::aws:policy/AmazonSNSFullAccess"
