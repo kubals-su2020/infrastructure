@@ -96,3 +96,7 @@ variable "domain_name"{
   type = "string"
   #default = "dev.shalvikubal.me"
 }
+
+variable "aws_acm_certificate_arn"{
+  type = "string"
+}
