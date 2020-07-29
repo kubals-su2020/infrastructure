@@ -195,7 +195,13 @@ resource "aws_security_group" "lb" {
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
-  
+  egress {
+    description = "open port 443"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
   egress {
     description = "open port 8080"
     from_port   = 3000
@@ -285,12 +291,13 @@ resource "aws_db_instance" "default" {
   storage_type         = "gp2"
   engine               = "mysql"
   engine_version       = "5.7"
-  instance_class       = "db.t3.medium"
+  instance_class       = "db.t3.micro"
   storage_encrypted    = true
   name                 = "${var.aws_db_instance_name}"
   username             = "${var.aws_db_instance_username}"
   password             = "${var.aws_db_instance_password}"
   parameter_group_name = "default.mysql5.7"
+  # parameter_group_name = "${aws_db_parameter_group.rds_parameter_group.name}"
   multi_az = false
   identifier =  "${var.aws_db_instance_identifier}"
   publicly_accessible = false
@@ -298,7 +305,17 @@ resource "aws_db_instance" "default" {
   vpc_security_group_ids    = ["${aws_security_group.database.id}"]
   db_subnet_group_name      = "${aws_db_subnet_group.default.id}"
 }
+# assignment 10
+# resource "aws_db_parameter_group" "rds_parameter_group" {
+#   name   = "rds-pg"
+#   family = "mysql5.6"
 
+#   parameter {
+#     name  = "force_ssl"
+#     value = "1"
+#   }
+# }
+# end assignment 10
 # EC2 Instance
 # resource "aws_instance" "web" {
 #   ami           = "${var.ami}"
@@ -818,9 +835,9 @@ resource "aws_launch_configuration" "asg_launch_config" {
 resource "aws_autoscaling_group" "asg" {
   name                 = "asg"
   launch_configuration = "${aws_launch_configuration.asg_launch_config.name}"
-  min_size             = 2
-  max_size             = 5
-  desired_capacity     = 2
+  min_size             = 1
+  max_size             = 1
+  desired_capacity     = 1
   default_cooldown = 60
   vpc_zone_identifier = "${aws_subnet.main.*.id}"
 
