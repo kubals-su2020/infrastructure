@@ -835,9 +835,9 @@ resource "aws_launch_configuration" "asg_launch_config" {
 resource "aws_autoscaling_group" "asg" {
   name                 = "asg"
   launch_configuration = "${aws_launch_configuration.asg_launch_config.name}"
-  min_size             = 1
-  max_size             = 1
-  desired_capacity     = 1
+  min_size             = 2
+  max_size             = 5
+  desired_capacity     = 2
   default_cooldown = 60
   vpc_zone_identifier = "${aws_subnet.main.*.id}"
 
